@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ventas por Sucursal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#F8FAFC; --card:#FFFFFF; --fg:#0F172A; --muted-fg:#475569; --muted:#EEF2F7; --border:#DBE3EE;
+  --primary:#1E40AF; --on-primary:#FFFFFF; --primary-soft:#DBEAFE; --accent:#B45309; --accent-soft:#FEF3C7;
+  --head:#DCE6F5; --sub:#EEF3FB; --total:#E2E8F0; --danger:#DC2626; --ring:#2563EB;
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0B1120; --card:#111A2E; --fg:#E2E8F0; --muted-fg:#94A3B8; --muted:#1A253D; --border:#24324F;
+  --primary:#60A5FA; --on-primary:#0B1120; --primary-soft:#1E3A8A55; --accent:#FBBF24; --accent-soft:#78350F55;
+  --head:#1C2A47; --sub:#16213A; --total:#22304D; --ring:#93C5FD; --shadow:none;
+}}
+:root[data-theme="dark"]{
+  --bg:#0B1120; --card:#111A2E; --fg:#E2E8F0; --muted-fg:#94A3B8; --muted:#1A253D; --border:#24324F;
+  --primary:#60A5FA; --on-primary:#0B1120; --primary-soft:#1E3A8A55; --accent:#FBBF24; --accent-soft:#78350F55;
+  --head:#1C2A47; --sub:#16213A; --total:#22304D; --ring:#93C5FD; --shadow:none;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "Fira Sans",system-ui,sans-serif;min-height:100dvh}
+.num,td.n,th.n{font-family:"Fira Code",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+header h1{font-size:18px;margin:0;font-weight:700}
+header .src{color:var(--muted-fg);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+header .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);transition:background .15s,border-color .15s}
+.btn:hover{background:var(--muted)}
+.btn.primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.icon{padding:0;width:38px;justify-content:center}
+main{max-width:1440px;margin:0 auto;padding:20px}
+/* drop zone */
+#drop{border:2px dashed var(--border);border-radius:16px;background:var(--card);padding:56px 20px;text-align:center;transition:border-color .15s,background .15s}
+#drop.over{border-color:var(--primary);background:var(--primary-soft)}
+#drop h2{margin:12px 0 4px;font-size:20px}
+#drop p{margin:0 0 18px;color:var(--muted-fg)}
+#drop svg.big{width:48px;height:48px;color:var(--primary);stroke-width:1.5}
+.err{color:var(--danger);margin-top:12px;font-weight:500}
+/* filters */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.filters{padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:end}
+.field label,.field .lbl{display:block;font-size:12px;font-weight:600;color:var(--muted-fg);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+.field select,.field input[type=date]{width:100%;min-height:38px;border:1px solid var(--border);border-radius:8px;background:var(--card);padding:0 10px}
+.dates{grid-column:span 2;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+@media (max-width:640px){.dates{grid-column:1/-1;grid-template-columns:1fr 1fr}.dates .field:first-child{grid-column:1/-1}}
+.presets{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--border);background:var(--muted);font-size:13px}
+.chip:hover{border-color:var(--primary)}
+.chip.on{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.chip.f{background:var(--primary-soft);border-color:transparent}
+.chip.f svg{width:14px;height:14px}
+/* multiselect */
+.ms{position:relative}
+.ms>button{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid var(--border);border-radius:8px;background:var(--card);padding:0 10px;text-align:left}
+.ms>button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms>button.act{border-color:var(--primary);background:var(--primary-soft)}
+.ms .pop{position:absolute;z-index:30;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:min(340px,90vw);background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:8px;display:none}
+.ms.open .pop{display:block}
+.ms .pop input[type=search]{width:100%;min-height:34px;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:var(--bg);margin-bottom:6px}
+.ms .opts{max-height:260px;overflow:auto}
+.ms .opts label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;cursor:pointer;font-size:14px}
+.ms .opts label:hover{background:var(--muted)}
+.ms .opts .cnt{margin-left:auto;color:var(--muted-fg);font-size:12px}
+.ms .acts{display:flex;gap:6px;border-top:1px solid var(--border);padding-top:6px;margin-top:6px}
+.ms .acts button{flex:1;min-height:30px;border:0;border-radius:6px;background:var(--muted);font-size:13px}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}
+.active-f{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 14px}
+.active-f:empty{display:none}
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
+.kpi{padding:14px 16px}
+.kpi .k{font-size:12px;font-weight:600;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.03em}
+.kpi .v{font-size:24px;font-weight:600;margin-top:2px}
+.mix{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:8px;background:var(--muted)}
+.mix span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted-fg);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* tabs + table */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:4px;background:var(--muted);padding:4px;border-radius:10px}
+.tabs button{border:0;background:transparent;min-height:34px;padding:0 14px;border-radius:7px;font-weight:500;display:inline-flex;align-items:center;gap:6px;color:var(--muted-fg)}
+.tabs button[aria-selected=true]{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+.bar .sp{flex:1}
+.bar .field{display:flex;align-items:center;gap:8px}
+.bar .field label{margin:0}
+.bar select{min-height:34px;border:1px solid var(--border);border-radius:8px;background:var(--card);padding:0 8px}
+.hint{font-size:13px;color:var(--muted-fg);padding:8px 14px 0}
+.tw{overflow:auto;max-height:70vh}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:14px}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+thead th{background:var(--head);font-weight:600;text-align:left;position:sticky;top:0;z-index:2}
+thead tr:nth-child(2) th{top:37px}
+th.n,td.n{text-align:right}
+th.grp{text-align:center;border-left:1px solid var(--border)}
+.bl{border-left:1px solid var(--border)}
+td.st,th.st{background:var(--sub);font-weight:600}
+td.gt,th.gt{background:var(--total);font-weight:700}
+tbody tr{transition:background .12s}
+tbody tr:hover td{background:var(--muted)}
+tbody tr.click{cursor:pointer}
+tbody tr:hover td.st{background:var(--head)}
+tfoot td{background:var(--head);font-weight:700;position:sticky;bottom:0;border-top:2px solid var(--primary)}
+td:first-child,th:first-child{position:sticky;left:0;z-index:1;background:inherit}
+tbody td:first-child{background:var(--card)}
+thead th:first-child{z-index:3;background:var(--head)}
+tfoot td:first-child{z-index:3}
+td .z{color:var(--muted-fg);opacity:.6}
+tr.cx td{color:var(--danger);text-decoration:line-through}
+tr.cx td:nth-child(12){text-decoration:none;font-weight:600}
+.pct{display:inline-block;width:60px;height:6px;background:var(--muted);border-radius:3px;margin-right:8px;vertical-align:middle;overflow:hidden}
+.pct b{display:block;height:100%;background:var(--primary)}
+.empty{padding:48px 20px;text-align:center;color:var(--muted-fg)}
+.foot{font-size:12px;color:var(--muted-fg);padding:8px 14px}
+.hidden{display:none!important}
+@media (max-width:640px){main{padding:12px}header{padding:10px 12px}header .src{display:none}.btn .t{display:none}.btn{padding:0 10px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{header,.filters,.presets,.active-f,.bar .sp~*,#drop{display:none!important}.tw{max-height:none;overflow:visible}body{background:#fff;color:#000}.panel{box-shadow:none}}
+</style>
+</head>
+<body>
+<header>
+  <svg class="i" style="width:26px;height:26px;color:var(--primary)" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6v6M15 6v6M2 12h19.6M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>
+  <h1>Ventas por Sucursal</h1>
+  <span class="src" id="src"></span>
+  <span class="sp"></span>
+  <button class="btn" id="addBtn" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg><span class="t">Cargar CSV</span></button>
+  <button class="btn icon" id="themeBtn" type="button" aria-label="Cambiar tema claro/oscuro"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+  <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+</header>
+
+<main>
+  <section id="drop">
+    <svg class="i big" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3"/></svg>
+    <h2>Arrastra aquí tus reportes CSV</h2>
+    <p>Acepta "Producción por bus" (todos los buses) y "Branch Collection Report". Puedes cargar varios a la vez.</p>
+    <button class="btn primary" type="button" onclick="file.click()">Seleccionar archivos</button>
+    <div class="err" id="err" role="alert"></div>
+  </section>
+
+  <div id="app" class="hidden">
+    <section class="panel" aria-label="Filtros">
+      <div class="filters" id="filters">
+        <div class="dates">
+          <div class="field"><label for="dField">Fecha por</label>
+            <select id="dField"><option value="fv">Fecha de viaje</option><option value="fs">Fecha de venta</option></select></div>
+          <div class="field"><label for="dFrom">Desde</label><input type="date" id="dFrom"></div>
+          <div class="field"><label for="dTo">Hasta</label><input type="date" id="dTo"></div>
+        </div>
+      </div>
+      <div class="filters" style="padding-top:0">
+        <div class="presets" id="presets">
+          <span class="field"><span class="lbl" style="margin:0 6px 0 0">Rango rápido</span></span>
+          <button class="chip" data-p="all" type="button">Todo</button>
+          <button class="chip" data-p="last" type="button">Último día con datos</button>
+          <button class="chip" data-p="today" type="button">Hoy</button>
+          <button class="chip" data-p="7" type="button">Últimos 7 días</button>
+          <button class="chip" data-p="month" type="button">Este mes</button>
+          <span class="sp" style="flex:1"></span>
+          <button class="chip" id="clearAll" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width:14px;height:14px"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Limpiar filtros</button>
+        </div>
+      </div>
+      <div class="active-f" id="activeF" aria-live="polite"></div>
+    </section>
+
+    <section class="kpis" id="kpis" aria-live="polite"></section>
+
+    <section class="panel">
+      <div class="bar">
+        <div class="tabs" role="tablist">
+          <button role="tab" data-v="suc" aria-selected="true" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>Por sucursal</button>
+          <button role="tab" data-v="bus" aria-selected="false" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Todos los buses</button>
+          <button role="tab" data-v="det" aria-selected="false" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Detalle</button>
+        </div>
+        <div class="field" id="grpWrap"><label for="grp" class="lbl">Filas por</label>
+          <select id="grp"><option value="patente">Patente</option><option value="bus">Bus (tipo)</option><option value="servicio">Servicio</option><option value="cajero">Cajero</option><option value="fv">Fecha de viaje</option></select></div>
+        <span class="sp"></span>
+        <button class="btn" id="csvBtn" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="t">Exportar Excel</span></button>
+        <button class="btn" type="button" onclick="print()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg><span class="t">Imprimir</span></button>
+      </div>
+      <div class="hint" id="hint"></div>
+      <div class="tw" id="table"></div>
+      <div class="foot" id="foot"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const CLP = new Intl.NumberFormat('es-CL');
+const money = v => '$' + CLP.format(v);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const BLANK = '(en blanco)';
+const PAY_COLORS = ['var(--primary)','var(--accent)','#10B981','#8B5CF6','#EC4899','#64748B'];
+
+// Filtros de lista: clave interna -> etiqueta
+const DIMS = [
+  ['sucursal','Sucursal'], ['bus','Bus (tipo)'], ['patente','Patente'], ['pago','Tipo de pago'],
+  ['servicio','Servicio'], ['origen','Origen'], ['destino','Destino'], ['estado','Estado'], ['cajero','Cajero'],
+];
+
+let DATA = [], files = [];
+const sel = Object.fromEntries(DIMS.map(([k]) => [k, new Set()])); // vacío = todos
+let view = 'suc';
+
+// ---------- carga ----------
+const isoDMY = s => { const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(s || ''); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; };
+const toNum = s => Number(String(s ?? '').replace(/[^\d-]/g, '')) || 0;
+const v = s => (s ?? '').toString().trim() || BLANK;
+
+function normalize(rows, fields) {
+  if (fields.includes('Sucursal de Venta')) return rows.map(r => ({
+    sucursal: v(r['Sucursal de Venta']), pago: v(r['Modo de Pago']), monto: toNum(r['Monto Neto']), tarifa: toNum(r['Tarifa Original']), descuento: toNum(r['Monto Descuentos']),
+    bus: v(r['Tipo Bus']), patente: v(r['Patente del Bus']), servicio: v(r['Nombre del Servicio']),
+    origen: v(r['Origen']), destino: v(r['Destino']), estado: v(r['Estado']), cajero: v(r['Cajero Original']),
+    fv: (r['Fecha de Viaje'] || '').slice(0, 10), fs: isoDMY(r['Fecha de Venta']), boleto: r['N° Pasaje'] || '',
+  }));
+  if (fields.includes('Nombre de Sucursal')) return rows
+    .filter(r => (r['Tipo'] || '').trim() === 'Pasajes') // descarta el bloque "Resumen" del final
+    .map(r => ({
+      sucursal: v(r['Nombre de Sucursal']), pago: v(r['Transacciones']), monto: toNum(r['Monto Neto']), tarifa: toNum(r['Tarifa']), descuento: toNum(r['Descuento']),
+      bus: BLANK, patente: BLANK, servicio: v(r['Servicio']),
+      origen: v(r['Origen']), destino: v(r['Destino']), estado: toNum(r['Devoluciones']) ? 'Con devolución' : 'Vendido',
+      cajero: v(r['Usuario']), fv: isoDMY(r['Fecha de Viaje']), fs: isoDMY(r['Fecha Creado']), boleto: (r['Descripción'] || '').trim(),
+    }));
+  return null;
+}
+
+async function readFile(f) {
+  const buf = await f.arrayBuffer();
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { text = new TextDecoder('windows-1252').decode(buf); }
+  const p = Papa.parse(text, { header: true, skipEmptyLines: true, transformHeader: h => h.trim() });
+  const rows = normalize(p.data, p.meta.fields || []);
+  if (!rows) throw new Error(`"${f.name}" no tiene un formato reconocido (falta "Sucursal de Venta" o "Nombre de Sucursal").`);
+  rows.forEach(r => r.cancel = /^cancelad/i.test(r.estado)); // se muestran en Detalle pero no suman
+  return rows;
+}
+
+async function load(list) {
+  $('#err').textContent = '';
+  try {
+    for (const f of list) { DATA = DATA.concat(await readFile(f)); files.push(f.name); }
+  } catch (e) { $('#err').textContent = e.message; if (!DATA.length) return; }
+  if (!DATA.length) { $('#err').textContent = 'Los archivos no contienen ventas.'; return; }
+  $('#drop').classList.add('hidden'); $('#app').classList.remove('hidden');
+  $('#src').textContent = files.join(' · ') + ` — ${CLP.format(DATA.length)} registros`;
+  buildMultiselects(); setPreset('all');
+}
+
+$('#file').onchange = e => { load([...e.target.files]); e.target.value = ''; };
+$('#addBtn').onclick = () => $('#file').click();
+const drop = $('#drop');
+['dragenter','dragover'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+document.addEventListener('drop', e => load([...e.dataTransfer.files].filter(f => /\.csv$/i.test(f.name))));
+
+// ---------- filtros ----------
+function passes(r, skip) {
+  const f = $('#dField').value, a = $('#dFrom').value, b = $('#dTo').value;
+  if (a && r[f] < a) return false;
+  if (b && r[f] > b) return false;
+  for (const [k] of DIMS) if (k !== skip && sel[k].size && !sel[k].has(r[k])) return false;
+  return true;
+}
+const filtered = () => DATA.filter(r => passes(r));
+
+function buildMultiselects() {
+  document.querySelectorAll('.ms-field').forEach(n => n.remove());
+  const host = $('#filters');
+  for (const [k, label] of DIMS) {
+    if (new Set(DATA.map(r => r[k])).size < 2 && !sel[k].size) continue; // oculta filtros sin variedad
+    const d = document.createElement('div');
+    d.className = 'field ms-field';
+    d.innerHTML = `<span class="lbl" id="l-${k}">${label}</span><div class="ms" data-k="${k}">
+      <button type="button" aria-haspopup="true" aria-expanded="false" aria-labelledby="l-${k}"><span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="pop"><input type="search" placeholder="Buscar…" aria-label="Buscar ${label}"><div class="opts"></div>
+      <div class="acts"><button type="button" data-a="all">Todos</button><button type="button" data-a="none">Limpiar</button></div></div></div>`;
+    host.appendChild(d);
+    const ms = d.querySelector('.ms'), btn = ms.querySelector('button');
+    btn.onclick = () => { const o = !ms.classList.contains('open'); closeAll(); ms.classList.toggle('open', o); btn.setAttribute('aria-expanded', o); if (o) { fillOpts(ms); ms.querySelector('input').focus(); } };
+    ms.querySelector('input').oninput = () => fillOpts(ms);
+    ms.querySelector('.opts').onchange = e => { const val = e.target.value; e.target.checked ? sel[k].add(val) : sel[k].delete(val); render(); };
+    ms.querySelector('.acts').onclick = e => { if (!e.target.dataset.a) return; sel[k].clear(); ms.querySelector('input').value = ''; fillOpts(ms); render(); };
+  }
+}
+function fillOpts(ms) {
+  const k = ms.dataset.k, q = ms.querySelector('input').value.toLowerCase();
+  const cnt = new Map();
+  for (const r of DATA) if (passes(r, k)) cnt.set(r[k], (cnt.get(r[k]) || 0) + 1);
+  sel[k].forEach(x => cnt.has(x) || cnt.set(x, 0));
+  const opts = [...cnt].filter(([x]) => x.toLowerCase().includes(q)).sort((a, b) => a[0].localeCompare(b[0], 'es'));
+  ms.querySelector('.opts').innerHTML = opts.map(([x, n]) =>
+    `<label><input type="checkbox" value="${esc(x)}" ${sel[k].has(x) ? 'checked' : ''}>${esc(x)}<span class="cnt">${n}</span></label>`).join('')
+    || '<div class="empty" style="padding:12px">Sin resultados</div>';
+}
+function closeAll() { document.querySelectorAll('.ms.open').forEach(m => { m.classList.remove('open'); m.querySelector('button').setAttribute('aria-expanded', false); }); }
+document.addEventListener('click', e => { if (!e.target.closest('.ms')) closeAll(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+
+['#dField','#dFrom','#dTo'].forEach(s => $(s).addEventListener('change', () => { markPreset(null); render(); }));
+$('#presets').onclick = e => { const p = e.target.closest('[data-p]'); if (p) setPreset(p.dataset.p); };
+$('#clearAll').onclick = () => { Object.values(sel).forEach(s => s.clear()); setPreset('all'); };
+
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+function setPreset(p) {
+  const f = $('#dField').value, dates = DATA.map(r => r[f]).filter(Boolean).sort();
+  const t = new Date(); let a = '', b = '';
+  if (p === 'last') a = b = dates.at(-1) || '';
+  if (p === 'today') a = b = iso(t);
+  if (p === '7') { b = iso(t); a = iso(new Date(t - 6 * 864e5)); }
+  if (p === 'month') { b = iso(t); a = b.slice(0, 8) + '01'; }
+  $('#dFrom').value = a; $('#dTo').value = b;
+  $('#dFrom').min = $('#dTo').min = dates[0] || ''; $('#dFrom').max = $('#dTo').max = dates.at(-1) || '';
+  markPreset(p); render();
+}
+function markPreset(p) { document.querySelectorAll('[data-p]').forEach(c => c.classList.toggle('on', c.dataset.p === p)); }
+
+// ---------- agregación ----------
+const PAY_ORDER = ['Efectivo', 'Tarjeta'];
+const sortPay = (a, b) => (PAY_ORDER.indexOf(a) + 1 || 99) - (PAY_ORDER.indexOf(b) + 1 || 99) || (a === BLANK) - (b === BLANK) || a.localeCompare(b, 'es');
+const sortTxt = (a, b) => (a === BLANK) - (b === BLANK) || a.localeCompare(b, 'es');
+function sumBy(rows, keyFn) { const m = new Map(); for (const r of rows) { const k = keyFn(r); m.set(k, (m.get(k) || 0) + r.monto); } return m; }
+const cell = (x, cls = '') => `<td class="n ${cls}">${x ? CLP.format(x) : '<span class="z">—</span>'}</td>`;
+
+let exportRows = [];
+
+function render() {
+  const rows = filtered();
+  document.querySelectorAll('.ms').forEach(ms => {
+    const k = ms.dataset.k, s = sel[k], b = ms.querySelector('button');
+    b.classList.toggle('act', s.size > 0);
+    b.querySelector('span').textContent = !s.size ? 'Todos' : s.size === 1 ? [...s][0] : `${s.size} seleccionados`;
+    if (ms.classList.contains('open')) fillOpts(ms);
+  });
+  $('#activeF').innerHTML = DIMS.flatMap(([k, l]) => [...sel[k]].map(x =>
+    `<button class="chip f" type="button" data-k="${k}" data-x="${esc(x)}" aria-label="Quitar filtro ${esc(l)}: ${esc(x)}">${esc(l)}: <b>${esc(x)}</b><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`)).join('');
+  const live = rows.filter(r => !r.cancel);
+  renderKpis(live);
+  $('#grpWrap').classList.toggle('hidden', view !== 'bus');
+  view === 'det' ? renderDet(rows) : (view === 'suc' ? renderSuc : renderBus)(live);
+}
+$('#activeF').onclick = e => { const c = e.target.closest('[data-k]'); if (c) { sel[c.dataset.k].delete(c.dataset.x); render(); } };
+
+function renderKpis(rows) {
+  const total = rows.reduce((s, r) => s + r.monto, 0);
+  const pays = [...sumBy(rows, r => r.pago)].sort((a, b) => sortPay(a[0], b[0]));
+  const buses = new Set(rows.map(r => r.bus)); buses.delete(BLANK);
+  $('#kpis').innerHTML = `
+    <div class="panel kpi"><div class="k">Total monto neto</div><div class="v num">${money(total)}</div></div>
+    <div class="panel kpi"><div class="k">Pasajes</div><div class="v num">${CLP.format(rows.length)}</div></div>
+    <div class="panel kpi"><div class="k">Ticket promedio</div><div class="v num">${money(rows.length ? Math.round(total / rows.length) : 0)}</div></div>
+    <div class="panel kpi"><div class="k">Mix de pago · ${buses.size} bus${buses.size === 1 ? '' : 'es'}</div>
+      <div class="mix" role="img" aria-label="${pays.map(([p, x]) => `${p} ${total ? Math.round(x / total * 100) : 0}%`).join(', ')}">${pays.map(([, x], i) => `<span style="width:${total ? x / total * 100 : 0}%;background:${PAY_COLORS[i % 6]}"></span>`).join('')}</div>
+      <div class="legend">${pays.map(([p, x], i) => `<span><i style="background:${PAY_COLORS[i % 6]}"></i>${esc(p)} ${total ? Math.round(x / total * 100) : 0}%</span>`).join('')}</div></div>`;
+}
+
+const empty = () => { $('#table').innerHTML = '<div class="empty">No hay ventas con estos filtros. Prueba ampliar el rango de fechas o <button class="btn" type="button" onclick="clearAll.click()">limpiar filtros</button></div>'; $('#foot').textContent = ''; exportRows = []; };
+
+// Vista 1: filas = sucursal, columnas = tipo de pago (imagen 1)
+function renderSuc(rows) {
+  const busSel = sel.bus.size === 1 ? [...sel.bus][0] : sel.patente.size === 1 ? [...sel.patente][0] : null;
+  $('#hint').textContent = busSel ? `Mostrando solo: ${busSel}` : 'Tip: en "Todos los buses" haz clic en una fila para ver el detalle de ese bus aquí.';
+  if (!rows.length) return empty();
+  const pays = [...new Set(rows.map(r => r.pago))].sort(sortPay);
+  const sucs = [...new Set(rows.map(r => r.sucursal))].sort(sortTxt);
+  const m = sumBy(rows, r => r.sucursal + '\u0000' + r.pago), bySuc = sumBy(rows, r => r.sucursal), byPay = sumBy(rows, r => r.pago);
+  const total = rows.reduce((s, r) => s + r.monto, 0);
+  $('#table').innerHTML = `<table><thead><tr><th>Sucursal</th>${pays.map(p => `<th class="n">${esc(p)}</th>`).join('')}<th class="n gt">Total general</th><th class="n">% del total</th></tr></thead>
+    <tbody>${sucs.map(s => `<tr><td>${esc(s)}</td>${pays.map(p => cell(m.get(s + '\u0000' + p))).join('')}${cell(bySuc.get(s), 'gt')}
+      <td class="n"><span class="pct"><b style="width:${bySuc.get(s) / total * 100}%"></b></span>${(bySuc.get(s) / total * 100).toFixed(1)}%</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total general</td>${pays.map(p => cell(byPay.get(p))).join('')}${cell(total)}<td class="n">100%</td></tr></tfoot></table>`;
+  $('#foot').textContent = `${sucs.length} sucursales · ${pays.length} tipos de pago`;
+  exportRows = [['Sucursal', ...pays, 'Total general'], ...sucs.map(s => [s, ...pays.map(p => m.get(s + '\u0000' + p) || 0), bySuc.get(s)]), ['Total general', ...pays.map(p => byPay.get(p)), total]];
+}
+
+// Vista 2: filas = bus, columnas = sucursal > tipo de pago + subtotal (imagen 2)
+function renderBus(rows) {
+  const g = $('#grp').value, gl = $('#grp').selectedOptions[0].text;
+  $('#hint').textContent = 'Clic en una fila para filtrar por ese valor y verlo por sucursal.';
+  if (!rows.length) return empty();
+  const sucs = [...new Set(rows.map(r => r.sucursal))].sort(sortTxt);
+  const paysOf = Object.fromEntries(sucs.map(s => [s, [...new Set(rows.filter(r => r.sucursal === s).map(r => r.pago))].sort(sortPay)]));
+  const keys = [...new Set(rows.map(r => r[g]))].sort(sortTxt);
+  const m = sumBy(rows, r => r[g] + '\u0000' + r.sucursal + '\u0000' + r.pago), ms = sumBy(rows, r => r[g] + '\u0000' + r.sucursal);
+  const rowT = sumBy(rows, r => r[g]), colP = sumBy(rows, r => r.sucursal + '\u0000' + r.pago), colS = sumBy(rows, r => r.sucursal);
+  const total = rows.reduce((s, r) => s + r.monto, 0);
+  const line = (get, getS) => sucs.map(s => paysOf[s].map((p, i) => cell(get(s, p), i ? '' : 'bl')).join('') + cell(getS(s), 'st')).join('');
+  $('#table').innerHTML = `<table><thead>
+    <tr><th rowspan="2">${esc(gl)}</th>${sucs.map(s => `<th class="grp" colspan="${paysOf[s].length + 1}">${esc(s)}</th>`).join('')}<th rowspan="2" class="n gt">Total general</th></tr>
+    <tr>${sucs.map(s => paysOf[s].map((p, i) => `<th class="n ${i ? '' : 'bl'}">${esc(p)}</th>`).join('') + `<th class="n st">Total ${esc(s)}</th>`).join('')}</tr></thead>
+    <tbody>${keys.map(k => `<tr class="click" tabindex="0" data-g="${esc(k)}" title="Ver ${esc(k)} por sucursal"><td>${esc(k)}</td>${line((s, p) => m.get(k + '\u0000' + s + '\u0000' + p), s => ms.get(k + '\u0000' + s))}${cell(rowT.get(k), 'gt')}</tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total general</td>${line((s, p) => colP.get(s + '\u0000' + p), s => colS.get(s))}${cell(total)}</tr></tfoot></table>`;
+  $('#foot').textContent = `${keys.length} filas · ${sucs.length} sucursales`;
+  const hdr = sucs.flatMap(s => [...paysOf[s].map(p => `${s} - ${p}`), `Total ${s}`]);
+  const vals = (get, getS) => sucs.flatMap(s => [...paysOf[s].map(p => get(s, p) || 0), getS(s) || 0]);
+  exportRows = [[gl, ...hdr, 'Total general'],
+    ...keys.map(k => [k, ...vals((s, p) => m.get(k + '\u0000' + s + '\u0000' + p), s => ms.get(k + '\u0000' + s)), rowT.get(k)]),
+    ['Total general', ...vals((s, p) => colP.get(s + '\u0000' + p), s => colS.get(s)), total]];
+}
+$('#table').addEventListener('click', e => drill(e.target.closest('tr.click')));
+$('#table').addEventListener('keydown', e => { if (e.key === 'Enter') drill(e.target.closest('tr.click')); });
+function drill(tr) {
+  if (!tr) return;
+  const g = $('#grp').value;
+  if (g === 'fv') { $('#dField').value = 'fv'; $('#dFrom').value = $('#dTo').value = tr.dataset.g; markPreset(null); }
+  else { sel[g].clear(); sel[g].add(tr.dataset.g); }
+  setView('suc');
+}
+
+// Vista 3: detalle
+const DET = [['fv','F. viaje'],['fs','F. venta'],['boleto','Boleto'],['sucursal','Sucursal'],['pago','Pago'],['bus','Bus'],['patente','Patente'],['servicio','Servicio'],['origen','Origen'],['destino','Destino'],['cajero','Cajero'],['estado','Estado'],['tarifa','Tarifa original'],['descuento','Descuento'],['monto','Monto neto']];
+const NUMS = new Set(['tarifa', 'descuento', 'monto']);
+function renderDet(rows) {
+  $('#hint').textContent = rows.length > 1000 ? 'Mostrando los primeros 1.000 registros; "Exportar" descarga todos.' : '';
+  if (!rows.length) return empty();
+  const r2 = [...rows].sort((a, b) => (b.fs || '').localeCompare(a.fs || ''));
+  $('#table').innerHTML = `<table><thead><tr>${DET.map(([k, l]) => `<th class="${NUMS.has(k) ? 'n' : ''}">${l}</th>`).join('')}</tr></thead>
+    <tbody>${r2.slice(0, 1000).map(r => `<tr class="${r.cancel ? 'cx' : ''}">${DET.map(([k]) => NUMS.has(k) ? cell(r[k]) : `<td>${esc(r[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const nc = rows.filter(r => r.cancel).length;
+  $('#foot').textContent = `${CLP.format(rows.length)} registros` + (nc ? ` · ${CLP.format(nc)} cancelados (tachados, no suman en totales)` : '');
+  exportRows = [DET.map(d => d[1]), ...r2.map(r => DET.map(([k]) => r[k]))];
+}
+
+// ---------- vistas, export, tema ----------
+function setView(v2) { view = v2; document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', t.dataset.v === v2)); render(); }
+document.querySelector('.tabs').onclick = e => { const t = e.target.closest('[role=tab]'); if (t) setView(t.dataset.v); };
+$('#grp').onchange = render;
+
+$('#csvBtn').onclick = () => {
+  if (!exportRows.length) return;
+  const ws = XLSX.utils.aoa_to_sheet(exportRows);
+  ws['!cols'] = exportRows[0].map((_, c) => ({ wch: Math.min(40, Math.max(...exportRows.map(r => String(r[c] ?? '').length)) + 2) }));
+  for (const k in ws) if (ws[k].t === 'n') ws[k].z = '#,##0';
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, { suc: 'Por sucursal', bus: 'Todos los buses', det: 'Detalle' }[view]);
+  XLSX.writeFile(wb, `ventas_${view}_${iso(new Date())}.xlsx`);
+};
+
+$('#themeBtn').onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('theme', document.documentElement.dataset.theme); } catch {}
+};
+try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+</body>
+</html>
