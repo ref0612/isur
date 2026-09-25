@@ -480,10 +480,13 @@ $('#voucherBtn').onclick = () => {
     <hr><div class="s">Totales por pago</div>${pays.map(p => ln(p, money(byPay.get(p)))).join('')}
     <hr>${ln('Pasajes', CLP.format(rows.length))}${ln('TOTAL', money(total), 'big')}<hr>
     <div class="sig">Firma chofer</div><div class="sig">Firma cajero / recibe</div>
-    <script>onload = () => { print(); setTimeout(close, 300); }<\/script>`; // sin cierre de body: Live Server inyecta su script ahí y rompería este string
-  const w = open('', '_blank', 'width=380,height=700');
-  if (!w) return alert('El navegador bloqueó la ventana del voucher. Permite ventanas emergentes para este sitio.');
-  w.document.write(html); w.document.close();
+    `; // sin cierre de body: Live Server inyecta su script ahí y rompería este string
+  // iframe oculto en vez de ventana emergente: Chrome bloquea los pop-ups
+  $('#voucherFrame')?.remove();
+  const f = Object.assign(document.createElement('iframe'), { id: 'voucherFrame', style: 'position:fixed;width:0;height:0;border:0' });
+  document.body.appendChild(f);
+  f.contentDocument.write(html); f.contentDocument.close();
+  f.contentWindow.focus(); f.contentWindow.print();
 };
 
 $('#themeBtn').onclick = () => {
