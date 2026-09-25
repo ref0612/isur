@@ -188,6 +188,7 @@ tr.cx td:nth-child(12){text-decoration:none;font-weight:600}
           <select id="grp"><option value="patente">Patente</option><option value="bus">Bus (tipo)</option><option value="servicio">Servicio</option><option value="cajero">Cajero</option><option value="fv">Fecha de viaje</option></select></div>
         <span class="sp"></span>
         <button class="btn" id="csvBtn" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="t">Exportar Excel</span></button>
+        <button class="btn" id="voucherBtn" type="button" title="Voucher de respaldo para el chofer (impresora térmica 80 mm)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2h14v20l-3-2-2 2-2-2-2 2-2-2-3 2zM9 7h6M9 11h6M9 15h4"/></svg><span class="t">Voucher 80 mm</span></button>
         <button class="btn" type="button" onclick="print()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg><span class="t">Imprimir</span></button>
       </div>
       <div class="hint" id="hint"></div>
@@ -351,6 +352,7 @@ function render() {
   const live = rows.filter(r => !r.cancel);
   renderKpis(live);
   $('#grpWrap').classList.toggle('hidden', view !== 'bus');
+  $('#voucherBtn').classList.toggle('hidden', view !== 'suc');
   view === 'det' ? renderDet(rows) : (view === 'suc' ? renderSuc : renderBus)(live);
 }
 $('#activeF').onclick = e => { const c = e.target.closest('[data-k]'); if (c) { sel[c.dataset.k].delete(c.dataset.x); render(); } };
@@ -448,6 +450,40 @@ $('#csvBtn').onclick = () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, { suc: 'Por sucursal', bus: 'Todos los buses', det: 'Detalle' }[view]);
   XLSX.writeFile(wb, `ventas_${view}_${iso(new Date())}.xlsx`);
+};
+
+// Voucher 80 mm (impresora térmica) para respaldo del chofer
+const dmy = d => d ? d.split('-').reverse().join('/') : '…';
+$('#voucherBtn').onclick = () => {
+  const rows = filtered().filter(r => !r.cancel);
+  if (!rows.length) return alert('No hay ventas con estos filtros.');
+  if (sel.patente.size !== 1 && sel.bus.size !== 1 && !confirm('No hay un bus (patente) seleccionado: el voucher incluirá TODOS los buses filtrados. ¿Continuar?')) return;
+  const pays = [...new Set(rows.map(r => r.pago))].sort(sortPay);
+  const sucs = [...new Set(rows.map(r => r.sucursal))].sort(sortTxt);
+  const m = sumBy(rows, r => r.sucursal + '\u0000' + r.pago), bySuc = sumBy(rows, r => r.sucursal), byPay = sumBy(rows, r => r.pago);
+  const cnt = s => rows.filter(r => r.sucursal === s).length;
+  const total = rows.reduce((s, r) => s + r.monto, 0);
+  const ln = (a, b, c = '') => `<div class="l ${c}"><span>${esc(a)}</span><span>${b}</span></div>`;
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Voucher liquidación</title><style>
+    @page{size:80mm auto;margin:0}
+    *{box-sizing:border-box}body{width:72mm;margin:0 auto;padding:4mm 0 8mm;font:12px/1.35 ui-monospace,Consolas,monospace;color:#000;background:#fff}
+    h1{font-size:15px;text-align:center;margin:0 0 2px}.c{text-align:center}hr{border:0;border-top:1px dashed #000;margin:6px 0}
+    .l{display:flex;justify-content:space-between;gap:8px}.l span:last-child{text-align:right;white-space:nowrap}
+    .b{font-weight:700}.big{font-size:15px;font-weight:700}.s{margin-top:6px;font-weight:700;text-transform:uppercase}
+    .sig{margin-top:28px;border-top:1px solid #000;text-align:center;padding-top:2px}
+  </style></head><body>
+    <h1>LIQUIDACIÓN DE BUS</h1><div class="c">Voucher de respaldo chofer</div><hr>
+    ${ln('Emitido', new Date().toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }))}
+    ${ln($('#dField').selectedOptions[0].text, $('#dFrom').value || $('#dTo').value ? `${dmy($('#dFrom').value)} - ${dmy($('#dTo').value)}` : 'Todas')}
+    ${DIMS.filter(([k]) => sel[k].size).map(([k, l]) => ln(l, esc([...sel[k]].join(', ')))).join('')}<hr>
+    ${sucs.map(s => `<div class="s">${esc(s)}</div>${pays.filter(p => m.get(s + '\u0000' + p)).map(p => ln(p, money(m.get(s + '\u0000' + p)))).join('')}${ln(`Subtotal (${cnt(s)} pas.)`, money(bySuc.get(s)), 'b')}`).join('')}
+    <hr><div class="s">Totales por pago</div>${pays.map(p => ln(p, money(byPay.get(p)))).join('')}
+    <hr>${ln('Pasajes', CLP.format(rows.length))}${ln('TOTAL', money(total), 'big')}<hr>
+    <div class="sig">Firma chofer</div><div class="sig">Firma cajero / recibe</div>
+    <script>onload = () => { print(); setTimeout(close, 300); }<\/script>`; // sin cierre de body: Live Server inyecta su script ahí y rompería este string
+  const w = open('', '_blank', 'width=380,height=700');
+  if (!w) return alert('El navegador bloqueó la ventana del voucher. Permite ventanas emergentes para este sitio.');
+  w.document.write(html); w.document.close();
 };
 
 $('#themeBtn').onclick = () => {
